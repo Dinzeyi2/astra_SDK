@@ -1,5 +1,5 @@
 """
-CodeAstraClient v2.0.1 — enterprise-grade privacy SDK.
+CodeAstraClient v2.1.0 — enterprise-grade privacy SDK.
 
 Bug fixes vs v2.0.0:
   - FHE paths corrected:  /fhe/* → /executor/compute/fhe/*
@@ -9,7 +9,7 @@ Bug fixes vs v2.0.0:
   - SMPC store ttl converted hours→seconds (server field is ttl_seconds)
   - vault_cohort_compute signature fixed: token_list (list) + epsilon, not dict + dp_epsilon
 
-New in v2.0.1 — 110+ missing enterprise endpoints added:
+New in v2.1.0 — 110+ missing enterprise endpoints added:
   - Auth:       login, me
   - Workspace:  create, invite, keys, members, usage
   - Sessions:   CRUD, drift, protect, cert lifecycle
@@ -108,7 +108,7 @@ def _get_base_url(mode: str, base_url: str | None = None) -> str:
 
 class CodeAstraClient:
     """
-    Full-featured CodeAstra client — v2.0.1.
+    Full-featured CodeAstra client — v2.1.0.
 
     Quickstart:
         from codeastra import CodeAstraClient
@@ -179,7 +179,7 @@ class CodeAstraClient:
         self._async_client: httpx.AsyncClient | None = None
 
         if verbose:
-            log.info("CodeAstra v2.0.1 mode=%s base=%s", mode, self.base_url)
+            log.info("CodeAstra v2.1.0 mode=%s base=%s", mode, self.base_url)
 
         if mode in ("onprem", "hybrid"):
             self._setup_onprem(mode)
@@ -2363,12 +2363,1060 @@ class CodeAstraClient:
 
     def info(self) -> dict:
         return {
-            "version":  "2.0.1",
+            "version":  "2.1.0",
             "mode":     self.mode,
             "base_url": self.base_url,
             "agent_id": self.agent_id,
             "zero_log": self.zero_log,
         }
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # AUTH — signup, health
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def auth_signup(self, name: str, email: str, password: str) -> dict:
+        """Create a new CodeAstra account and get an API key."""
+        return self._post("/auth/signup", {"name": name, "email": email, "password": password})
+
+    def health(self) -> dict:
+        """Server health check."""
+        return self._get("/health")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CERTS — workspace-level session certificates
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def certs_list(self) -> dict:
+        """List all session certificates in the workspace."""
+        return self._get("/certs")
+
+    def certs_stats(self) -> dict:
+        """Certificate statistics (issued, revoked, verified)."""
+        return self._get("/certs/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SESSION ANCHORS — semantic drift detection
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def session_anchor_set(
+        self,
+        session_id:       str,
+        anchor_prompt:    str,
+        threshold:        float       = 0.85,
+        action:           str         = "block",
+    ) -> dict:
+        """Set a semantic anchor for a session.  Triggers when conversation drifts."""
+        return self._post(f"/sessions/{session_id}/anchor", {
+            "anchor_prompt": anchor_prompt, "threshold": threshold, "action": action,
+        })
+
+    def session_anchor_get(self, session_id: str) -> dict:
+        """Get the current semantic anchor for a session."""
+        return self._get(f"/sessions/{session_id}/anchor")
+
+    def session_anchor_update_threshold(self, session_id: str, threshold: float) -> dict:
+        """Update the drift threshold for a session anchor."""
+        return self._patch(f"/sessions/{session_id}/anchor/threshold",
+                           {"threshold": threshold})
+
+    def session_anchor_trips(self, session_id: str) -> dict:
+        """Get anchor trip events for a session."""
+        return self._get(f"/sessions/{session_id}/anchor/trips")
+
+    def anchors_stats(self) -> dict:
+        """Aggregate statistics across all session anchors."""
+        return self._get("/anchors/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # HONEY TOOLS — global trip and stats
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def honey_tools_trips(self, limit: int = 50) -> dict:
+        """List all honey-tool trip events (prompt injection attempts)."""
+        return self._get("/honey-tools/trips", {"limit": limit})
+
+    def honey_tools_global_stats(self) -> dict:
+        """Aggregate honey-tool statistics across all agents."""
+        return self._get("/honey-tools/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # GUARDRAILS — grounding citations
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def guardrail_grounding_citation_check(self, output: str, session_id: str | None = None) -> dict:
+        """Verify agent output is grounded in configured documents."""
+        body: dict[str, Any] = {"output": output}
+        if session_id: body["session_id"] = session_id
+        return self._post("/guardrails/grounding/citation-check", body)
+
+    def guardrail_grounding_citation_stats(self) -> dict:
+        """Citation verification statistics."""
+        return self._get("/guardrails/grounding/citations/stats")
+
+    def guardrail_grounding_citations_session(self, session_id: str) -> dict:
+        """Get citation events for a specific session."""
+        return self._get(f"/guardrails/grounding/citations/{session_id}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # POLICIES — conflict checking, validation
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def policy_check_conflicts(self, name: str, proposed_rules: list[dict]) -> dict:
+        """Check if proposed rules conflict with an existing policy."""
+        return self._post(f"/policies/{name}/check-conflicts", {"rules": proposed_rules})
+
+    def policy_validate(self, rules: list[dict]) -> dict:
+        """Validate policy rules before creating."""
+        return self._post("/policies/validate", {"rules": rules})
+
+    def policy_conflicts_history(self) -> dict:
+        """History of all detected policy conflicts."""
+        return self._get("/policies/conflicts/history")
+
+    def policy_synthesize_check_conflicts(self, policy_id: str, proposed_rules: list[dict]) -> dict:
+        """Check conflicts for a synthesized policy."""
+        return self._post(f"/policies/synthesize/{policy_id}/check-conflicts",
+                          {"rules": proposed_rules})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PROXY CHAT — full suite (basic, v4, streams, passthrough)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def proxy_chat(
+        self,
+        messages:       list[dict],
+        model:          str        = "claude-sonnet-4-6",
+        system:         str | None = None,
+        classification: str        = "pii",
+        session_id:     str | None = None,
+        max_tokens:     int        = 2048,
+    ) -> dict:
+        """Basic protected LLM chat (v1 format)."""
+        body: dict[str, Any] = {
+            "messages": messages, "model": model,
+            "classification": classification, "max_tokens": max_tokens,
+        }
+        if system:     body["system"]     = system
+        if session_id: body["session_id"] = session_id
+        return self._post("/proxy/chat", body)
+
+    def proxy_chat_v4(
+        self,
+        messages:       list[dict],
+        model:          str        = "claude-sonnet-4-6",
+        system:         str | None = None,
+        classification: str        = "pii",
+        session_id:     str | None = None,
+        max_tokens:     int        = 2048,
+        guardrails:     bool       = True,
+        smpc:           bool       = False,
+    ) -> dict:
+        """v4 protected chat — SMPC-level protection + guardrails."""
+        body: dict[str, Any] = {
+            "messages": messages, "model": model,
+            "classification": classification, "max_tokens": max_tokens,
+            "guardrails": guardrails, "smpc": smpc,
+        }
+        if system:     body["system"]     = system
+        if session_id: body["session_id"] = session_id
+        return self._post("/proxy/chat/v4", body)
+
+    def proxy_chat_v2_stream(self, messages: list[dict], model: str = "claude-sonnet-4-6",
+                              **kwargs) -> dict:
+        """v2 streaming protected chat."""
+        return self._post("/proxy/chat/v2/stream",
+                          {"messages": messages, "model": model, **kwargs})
+
+    def proxy_chat_v3_stream(self, messages: list[dict], model: str = "claude-sonnet-4-6",
+                              **kwargs) -> dict:
+        """v3 streaming protected chat."""
+        return self._post("/proxy/chat/v3/stream",
+                          {"messages": messages, "model": model, **kwargs})
+
+    def proxy_chat_v4_stream(self, messages: list[dict], model: str = "claude-sonnet-4-6",
+                              **kwargs) -> dict:
+        """v4 streaming protected chat."""
+        return self._post("/proxy/chat/v4/stream",
+                          {"messages": messages, "model": model, **kwargs})
+
+    def proxy_stream_stats(self) -> dict:
+        """Streaming chat statistics."""
+        return self._get("/proxy/stream/stats")
+
+    def proxy_passthrough(self, body: dict) -> dict:
+        """Raw passthrough to underlying LLM with minimal processing."""
+        return self._post("/proxy/passthrough", body)
+
+    def proxy_passthrough_stats(self) -> dict:
+        """Passthrough usage statistics."""
+        return self._get("/proxy/passthrough/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODELS
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def models_list(self) -> dict:
+        """List all available LLM models."""
+        return self._get("/models")
+
+    def models_ollama_available(self) -> dict:
+        """List Ollama models available in on-prem deployment."""
+        return self._get("/models/ollama/available")
+
+    def model_validate(self, model: str) -> dict:
+        """Validate that a model is available and compatible."""
+        return self._get(f"/models/{model}/validate")
+
+    def models_usage_stats(self) -> dict:
+        """Per-model usage statistics."""
+        return self._get("/models/usage/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SETTINGS — security model, retention
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def security_model_get(self) -> dict:
+        """Get the active security model configuration."""
+        return self._get("/settings/security-model")
+
+    def security_model_set(self, config: dict) -> dict:
+        """Set the security model configuration."""
+        return self._put("/settings/security-model", config)
+
+    def security_model_set_overrides(self, overrides: dict) -> dict:
+        """Set per-field security model overrides."""
+        return self._put("/settings/security-model/overrides", overrides)
+
+    def security_model_delete_overrides(self) -> dict:
+        """Remove all security model overrides."""
+        return self._delete("/settings/security-model/overrides")
+
+    def security_model_test(self, sample: dict | None = None) -> dict:
+        """Test the active security model against a sample payload."""
+        params: dict[str, Any] = {}
+        if sample: params["sample"] = json.dumps(sample)
+        return self._get("/settings/security-model/test", params)
+
+    def retention_get(self) -> dict:
+        """Get data retention policy."""
+        return self._get("/settings/retention")
+
+    def retention_set(self, days: int, auto_wipe: bool = True) -> dict:
+        """Set data retention policy."""
+        return self._put("/settings/retention", {"days": days, "auto_wipe": auto_wipe})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PRIVACY — configuration and audit
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def privacy_status(self) -> dict:
+        """Get current privacy protection status."""
+        return self._get("/privacy")
+
+    def privacy_config_get(self) -> dict:
+        """Get privacy configuration."""
+        return self._get("/privacy/config")
+
+    def privacy_config_set(self, config: dict) -> dict:
+        """Update privacy configuration."""
+        return self._put("/privacy/config", config)
+
+    def privacy_providers(self) -> dict:
+        """List available privacy providers (local NER, cloud, on-prem)."""
+        return self._get("/privacy/providers")
+
+    def privacy_audit(self, limit: int = 50) -> dict:
+        """Privacy processing audit log."""
+        return self._get("/privacy/audit", {"limit": limit})
+
+    def privacy_audit_stats(self) -> dict:
+        """Privacy audit statistics."""
+        return self._get("/privacy/audit/stats")
+
+    def privacy_test(self, text: str, classification: str = "pii") -> dict:
+        """Test privacy detection on sample text."""
+        return self._post("/privacy/test",
+                          {"text": text, "classification": classification})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CLASSIFY — data classification
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def classify(self, data: Any, classification: str = "pii") -> dict:
+        """Classify data and identify sensitive fields."""
+        return self._post("/classify", {"data": data, "classification": classification})
+
+    def classify_batch(self, items: list) -> dict:
+        """Classify multiple data items."""
+        return self._post("/classify/batch", {"items": items})
+
+    def classify_policy_get(self) -> dict:
+        """Get the active classification policy."""
+        return self._get("/classify/policy")
+
+    def classify_policy_set(self, policy: dict) -> dict:
+        """Set the classification policy."""
+        return self._put("/classify/policy", policy)
+
+    def classify_stats(self) -> dict:
+        """Classification statistics."""
+        return self._get("/classify/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ZERO LOGGING — extended controls
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def zero_log_status(self) -> dict:
+        """Get zero-logging status."""
+        return self._get("/settings/zero-logging")
+
+    def zero_log_disable(self) -> dict:
+        """Disable zero-logging (re-enable standard audit logging)."""
+        return self._delete("/settings/zero-logging")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ON-PREMISES — public management methods
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def onprem_generate(self, deployment_mode: str = "docker", llm_provider: str = "ollama",
+                        llm_model: str = "llama3", air_gapped: bool = True,
+                        name: str | None = None) -> dict:
+        """Generate on-prem deployment package (Docker Compose, configs)."""
+        body: dict[str, Any] = {
+            "deployment_mode": deployment_mode, "llm_provider": llm_provider,
+            "llm_model": llm_model, "air_gapped": air_gapped,
+        }
+        if name: body["name"] = name
+        return self._post("/onprem/generate", body)
+
+    def onprem_generate_codeastra(self, config: dict | None = None) -> dict:
+        """Generate a CodeAstra-native on-prem package."""
+        return self._post("/onprem/generate/codeastra", config or {})
+
+    def onprem_models(self) -> dict:
+        """List models available in on-prem deployment."""
+        return self._get("/onprem/models")
+
+    def onprem_register_agent(self, agent_config: dict) -> dict:
+        """Register an agent with the on-prem deployment."""
+        return self._post("/onprem/agents", agent_config)
+
+    def onprem_health(self) -> dict:
+        """On-prem deployment health check."""
+        return self._get("/onprem/health")
+
+    def onprem_deployments(self) -> dict:
+        """List all on-prem deployments."""
+        return self._get("/onprem/deployments")
+
+    def onprem_heartbeat(self, deployment_id: str) -> dict:
+        """Send heartbeat for an on-prem deployment."""
+        return self._post(f"/onprem/{deployment_id}/heartbeat", {})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # AUDIT — extended (secure, enterprise)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def audit_secure(self, limit: int = 50) -> dict:
+        """Tamper-evident secure audit log."""
+        return self._get("/audit/secure", {"limit": limit})
+
+    def audit_secure_stats(self) -> dict:
+        """Secure audit log statistics."""
+        return self._get("/audit/secure/stats")
+
+    def audit_enterprise(self, limit: int = 50, **filters) -> dict:
+        """Enterprise-grade audit log with extended metadata."""
+        params: dict[str, Any] = {"limit": limit, **filters}
+        return self._get("/audit/enterprise", params)
+
+    def audit_enterprise_verify(self) -> dict:
+        """Verify integrity of the enterprise audit log."""
+        return self._get("/audit/enterprise/verify")
+
+    def audit_enterprise_export(self, format: str = "json", **filters) -> dict:
+        """Kick off an enterprise audit export job."""
+        return self._post("/audit/enterprise/export", {"format": format, **filters})
+
+    def audit_enterprise_export_status(self, job_id: str) -> dict:
+        """Get status of an enterprise audit export job."""
+        return self._get(f"/audit/enterprise/export/{job_id}")
+
+    def audit_export(self, limit: int = 1000) -> dict:
+        """Export audit log (legacy endpoint)."""
+        return self._get("/audit/export", {"limit": limit})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # POLICY TEMPLATES — pre-built policy packages
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def templates_list(self) -> dict:
+        """List all available policy templates."""
+        return self._get("/templates")
+
+    def template_get(self, template_id: str) -> dict:
+        """Get a specific policy template."""
+        return self._get(f"/templates/{template_id}")
+
+    def template_apply(self, template_id: str, overrides: dict | None = None) -> dict:
+        """Apply a policy template to the workspace."""
+        return self._post(f"/templates/{template_id}/apply", overrides or {})
+
+    def templates_history(self) -> dict:
+        """History of applied templates."""
+        return self._get("/templates/history")
+
+    def templates_active_delete(self) -> dict:
+        """Remove the currently active template."""
+        return self._delete("/templates/active")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # EVAL — LLM evaluation framework
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def eval_create(
+        self,
+        name:       str,
+        prompts:    list[str],
+        models:     list[str] | None = None,
+        rubric:     dict | None      = None,
+    ) -> dict:
+        """Create an LLM evaluation run."""
+        body: dict[str, Any] = {"name": name, "prompts": prompts}
+        if models: body["models"] = models
+        if rubric: body["rubric"] = rubric
+        return self._post("/eval", body)
+
+    def eval_list(self, limit: int = 50) -> dict:
+        """List all evaluation runs."""
+        return self._get("/eval", {"limit": limit})
+
+    def eval_get(self, eval_id: str) -> dict:
+        """Get an evaluation run result."""
+        return self._get(f"/eval/{eval_id}")
+
+    def eval_compare(self, eval_ids: list[str] | None = None) -> dict:
+        """Compare multiple evaluation runs."""
+        params: dict[str, Any] = {}
+        if eval_ids: params["ids"] = ",".join(eval_ids)
+        return self._get("/eval/compare", params)
+
+    def eval_stats(self) -> dict:
+        """Evaluation statistics."""
+        return self._get("/eval/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # VAULT — basic store/batch/read
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def vault_store(self, data: dict, classification: str = "pii",
+                    ttl_hours: int = 24) -> dict:
+        """Store data in the vault and receive tokens (raw response)."""
+        return self._post("/vault/store", {
+            "data": data, "agent_id": self.agent_id,
+            "classification": classification, "ttl_hours": ttl_hours,
+        })
+
+    def vault_batch(self, items: list[dict]) -> dict:
+        """Batch-store multiple items in the vault."""
+        return self._post("/vault/batch", {"items": items, "agent_id": self.agent_id})
+
+    def vault_read(self, token: str) -> dict:
+        """Read a token from the vault (trusted executor only)."""
+        return self._post("/vault/read", {"token": token, "agent_id": self.agent_id})
+
+    def vault_stats(self) -> dict:
+        """Vault storage statistics."""
+        return self._get("/vault/stats")
+
+    def vault_grants_list(self) -> dict:
+        """List all token grants."""
+        return self._get("/vault/grants")
+
+    def vault_grant_delete(self, grant_id: str) -> dict:
+        """Revoke a token grant."""
+        return self._delete(f"/vault/grants/{grant_id}")
+
+    def vault_smart_tokens_list(self) -> dict:
+        """List all smart tokens in the workspace."""
+        return self._get("/vault/smart-tokens")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # AGENT ACTIONS — low-level action management
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def agent_action(self, action_type: str, params: dict) -> dict:
+        """Submit an agent action."""
+        return self._post("/agent/action", {
+            "agent_id": self.agent_id, "action_type": action_type, "params": params,
+        })
+
+    def agent_actions(self, limit: int = 50) -> dict:
+        """List recent agent actions."""
+        return self._get("/agent/actions", {"limit": limit})
+
+    def agent_set_policy(self, agent_id: str, policy: dict) -> dict:
+        """Set an action policy for an agent."""
+        return self._post("/agent/policy", {"agent_id": agent_id, "policy": policy})
+
+    def agent_get_policy(self, agent_id: str) -> dict:
+        """Get the action policy for an agent."""
+        return self._get(f"/agent/policy/{agent_id}")
+
+    def agent_executor_register(self, execution_url: str, action_type: str = "*",
+                                 description: str = "") -> dict:
+        """Register an external executor endpoint."""
+        return self._post("/agent/executor", {
+            "execution_url": execution_url, "action_type": action_type,
+            "agent_id": self.agent_id, "description": description,
+        })
+
+    def agent_executor_list(self) -> dict:
+        """List registered executor endpoints."""
+        return self._get("/agent/executor")
+
+    def agent_executor_delete(self, endpoint_id: str) -> dict:
+        """Delete a registered executor endpoint."""
+        return self._delete(f"/agent/executor/{endpoint_id}")
+
+    def agent_executor_test(self, endpoint_id: str, test_payload: dict | None = None) -> dict:
+        """Test a registered executor endpoint."""
+        return self._post("/agent/executor/test",
+                          {"endpoint_id": endpoint_id, "payload": test_payload or {}})
+
+    def agent_demo(self, scenario: str = "hipaa") -> dict:
+        """Run a pre-built demo scenario."""
+        return self._post("/agent/demo", {"scenario": scenario})
+
+    def agent_get(self, agent_id: str) -> dict:
+        """Get a registered agent by ID."""
+        return self._get(f"/agents/{agent_id}")
+
+    def agent_runs(self, agent_id: str, limit: int = 50) -> dict:
+        """List run history for an agent."""
+        return self._get(f"/agents/{agent_id}/runs", {"limit": limit})
+
+    def agent_run(self, agent_id: str, input: str, **kwargs) -> dict:
+        """Run a registered agent."""
+        return self._post(f"/agents/{agent_id}/run", {"input": input, **kwargs})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PIPELINE — action pipelines
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def pipeline_action(self, action_type: str, params: dict,
+                        pipeline_id: str | None = None) -> dict:
+        """Execute an action in a pipeline context."""
+        body: dict[str, Any] = {
+            "agent_id": self.agent_id, "action_type": action_type, "params": params,
+        }
+        if pipeline_id: body["pipeline_id"] = pipeline_id
+        return self._post("/pipeline/action", body)
+
+    def pipeline_audit(self, pipeline_id: str | None = None) -> list:
+        """Get pipeline audit log."""
+        params: dict[str, Any] = {}
+        if pipeline_id: params["pipeline_id"] = pipeline_id
+        return self._get("/pipeline/audit", params).get("audit", [])
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # BYOK — Bring Your Own Key
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def byok_configure(self, provider: str, key_arn: str | None = None,
+                       key_id: str | None = None, **extra) -> dict:
+        """Configure Bring Your Own Key (AWS KMS, GCP KMS, HashiCorp Vault)."""
+        body: dict[str, Any] = {"provider": provider, **extra}
+        if key_arn: body["key_arn"] = key_arn
+        if key_id:  body["key_id"]  = key_id
+        return self._post("/byok/configure", body)
+
+    def byok_test(self) -> dict:
+        """Test BYOK key access."""
+        return self._post("/byok/test", {})
+
+    def byok_status(self) -> dict:
+        """Get BYOK configuration status."""
+        return self._get("/byok/status")
+
+    def byok_rotate(self) -> dict:
+        """Rotate the BYOK key."""
+        return self._post("/byok/rotate", {})
+
+    def byok_cryptographic_delete(self) -> dict:
+        """Cryptographically delete all data protected by the BYOK key."""
+        return self._delete("/byok/cryptographic-delete")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # RBAC — Role-Based Access Control
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def rbac_role_assign(self, user_id: str, role: str,
+                          permissions: list[str] | None = None) -> dict:
+        """Assign a role to a user."""
+        body: dict[str, Any] = {"user_id": user_id, "role": role}
+        if permissions: body["permissions"] = permissions
+        return self._post("/rbac/roles", body)
+
+    def rbac_role_delete(self, user_id: str) -> dict:
+        """Remove a role from a user."""
+        return self._delete(f"/rbac/roles/{user_id}")
+
+    def rbac_roles_list(self) -> dict:
+        """List all role assignments."""
+        return self._get("/rbac/roles")
+
+    def rbac_role_get(self, user_id: str) -> dict:
+        """Get role assignment for a user."""
+        return self._get(f"/rbac/roles/{user_id}")
+
+    def rbac_check(self, user_id: str, action: str,
+                   resource: str | None = None) -> dict:
+        """Check if a user has permission for an action."""
+        body: dict[str, Any] = {"user_id": user_id, "action": action}
+        if resource: body["resource"] = resource
+        return self._post("/rbac/check", body)
+
+    def rbac_permissions(self) -> dict:
+        """List all available permissions."""
+        return self._get("/rbac/permissions")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECURITY — IP allowlist, dual-approval, overview
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def security_ip_allowlist_list(self) -> dict:
+        """List IP allowlist entries."""
+        return self._get("/security/ip-allowlist")
+
+    def security_ip_allowlist_add(self, cidr: str, label: str = "") -> dict:
+        """Add an IP/CIDR to the allowlist."""
+        return self._post("/security/ip-allowlist", {"cidr": cidr, "label": label})
+
+    def security_ip_allowlist_delete(self, entry_id: str) -> dict:
+        """Remove an IP allowlist entry."""
+        return self._delete(f"/security/ip-allowlist/{entry_id}")
+
+    def security_dual_approval_request(self, action: str, payload: dict,
+                                        reason: str = "") -> dict:
+        """Request dual-approval for a sensitive action."""
+        return self._post("/security/dual-approval/request",
+                          {"action": action, "payload": payload, "reason": reason})
+
+    def security_dual_approval_approve(self, request_id: str,
+                                        decision: str, note: str = "") -> dict:
+        """Approve or reject a dual-approval request."""
+        return self._post("/security/dual-approval/approve",
+                          {"request_id": request_id, "decision": decision, "note": note})
+
+    def security_dual_approval_pending(self) -> dict:
+        """List pending dual-approval requests."""
+        return self._get("/security/dual-approval/pending")
+
+    def security_overview(self) -> dict:
+        """Security dashboard — threat summary, policy coverage, recent events."""
+        return self._get("/security/overview")
+
+    def security_trivy_submit(self, results: dict) -> dict:
+        """Submit Trivy vulnerability scan results."""
+        return self._post("/security/trivy/results", results)
+
+    def security_trivy_github_action(self) -> dict:
+        """Get the Trivy GitHub Action integration config."""
+        return self._get("/security/trivy/github-action")
+
+    def security_falco_webhook(self, event: dict) -> dict:
+        """Receive a Falco runtime security event."""
+        return self._post("/security/falco/webhook", event)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # DIFFERENTIAL PRIVACY
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def dp_protect_query(
+        self,
+        query:       str,
+        epsilon:     float       = 1.0,
+        sensitivity: float       = 1.0,
+        cohort_id:   str | None  = None,
+    ) -> dict:
+        """Execute a differentially private query."""
+        body: dict[str, Any] = {"query": query, "epsilon": epsilon, "sensitivity": sensitivity}
+        if cohort_id: body["cohort_id"] = cohort_id
+        return self._post("/dp/protect/query", body)
+
+    def dp_budget_get(self, cohort_id: str) -> dict:
+        """Get remaining privacy budget for a cohort."""
+        return self._get(f"/dp/budget/{cohort_id}")
+
+    def dp_budget_reset(self, cohort_id: str) -> dict:
+        """Reset the privacy budget for a cohort."""
+        return self._post(f"/dp/budget/{cohort_id}/reset", {})
+
+    def dp_report(self, cohort_id: str) -> dict:
+        """Get differential privacy report for a cohort."""
+        return self._get(f"/dp/report/{cohort_id}")
+
+    def dp_status(self) -> dict:
+        """Differential privacy system status."""
+        return self._get("/dp/status")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SYNTHETIC TWINS
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def synthetic_build(self, source_tokens: list[str], name: str = "",
+                         config: dict | None = None) -> dict:
+        """Build a synthetic twin from vault tokens."""
+        return self._post("/synthetic/build", {
+            "source_tokens": source_tokens, "name": name, **(config or {}),
+        })
+
+    def synthetic_query(self, twin_id: str, query: str, **kwargs) -> dict:
+        """Query a synthetic twin."""
+        return self._post("/synthetic/query",
+                          {"twin_id": twin_id, "query": query, **kwargs})
+
+    def synthetic_aggregate(self, twin_ids: list[str], operation: str,
+                             **kwargs) -> dict:
+        """Aggregate across multiple synthetic twins."""
+        return self._post("/synthetic/aggregate",
+                          {"twin_ids": twin_ids, "operation": operation, **kwargs})
+
+    def synthetic_validate(self, twin_id: str) -> dict:
+        """Validate a synthetic twin's statistical fidelity."""
+        return self._post("/synthetic/validate", {"twin_id": twin_id})
+
+    def synthetic_list(self) -> dict:
+        """List all synthetic twins."""
+        return self._get("/synthetic/list")
+
+    def synthetic_get(self, twin_id: str) -> dict:
+        """Get a synthetic twin."""
+        return self._get(f"/synthetic/{twin_id}")
+
+    def synthetic_delete(self, twin_id: str) -> dict:
+        """Delete a synthetic twin."""
+        return self._delete(f"/synthetic/{twin_id}")
+
+    def synthetic_status(self) -> dict:
+        """Synthetic twin engine status."""
+        return self._get("/synthetic/status")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TEE — Trusted Execution Environment (full)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def tee_run(self, code: str, inputs: dict | None = None,
+                preset: str = "standard") -> dict:
+        """Run code in a TEE with attested isolation."""
+        return self._post("/tee/run", {"code": code, "inputs": inputs or {}, "preset": preset})
+
+    def tee_session_create(self, config: dict | None = None) -> dict:
+        """Create a stateful TEE session for multi-step computation."""
+        return self._post("/tee/session/create", config or {})
+
+    def tee_session_compute(self, session_id: str, code: str,
+                             inputs: dict | None = None) -> dict:
+        """Execute code within an existing TEE session."""
+        return self._post("/tee/session/compute",
+                          {"session_id": session_id, "code": code, "inputs": inputs or {}})
+
+    def tee_session_close(self, session_id: str) -> dict:
+        """Close and wipe a TEE session."""
+        return self._post("/tee/session/close", {"session_id": session_id})
+
+    def tee_session_status(self, session_id: str) -> dict:
+        """Get status of a TEE session."""
+        return self._get(f"/tee/session/{session_id}/status")
+
+    def tee_attest(self) -> dict:
+        """Get TEE attestation certificate."""
+        return self._get("/tee/attest")
+
+    def tee_attest_verify(self) -> dict:
+        """Verify the TEE attestation certificate."""
+        return self._get("/tee/attest/verify")
+
+    def tee_audit(self, limit: int = 50) -> dict:
+        """TEE execution audit log."""
+        return self._get("/tee/audit", {"limit": limit})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PLATFORM — teams, channels, workspace, skills, schedule update
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def platform_team_create(self, name: str, agents: list[str],
+                              config: dict | None = None) -> dict:
+        """Create a multi-agent team."""
+        return self._post("/platform/teams",
+                          {"name": name, "agents": agents, **(config or {})})
+
+    def platform_teams_list(self) -> dict:
+        """List all platform teams."""
+        return self._get("/platform/teams")
+
+    def platform_team_run(self, team_id: str, input: str, **kwargs) -> dict:
+        """Run a platform team."""
+        return self._post(f"/platform/teams/{team_id}/run", {"input": input, **kwargs})
+
+    def platform_channel_webhook(self, channel_type: str, webhook_url: str,
+                                  **config) -> dict:
+        """Register a webhook for a platform channel type (slack, email, etc.)."""
+        return self._post(f"/platform/channels/{channel_type}/webhook",
+                          {"webhook_url": webhook_url, **config})
+
+    def platform_agent_workspace(self, agent_id: str) -> dict:
+        """List files in an agent's workspace."""
+        return self._get(f"/platform/agents/{agent_id}/workspace")
+
+    def platform_agent_workspace_upload(self, agent_id: str,
+                                         filename: str, content: str) -> dict:
+        """Upload a file to an agent's workspace."""
+        return self._post(f"/platform/agents/{agent_id}/workspace/upload",
+                          {"filename": filename, "content": content})
+
+    def platform_agent_workspace_file(self, agent_id: str, filename: str) -> dict:
+        """Get a specific file from an agent's workspace."""
+        return self._get(f"/platform/agents/{agent_id}/workspace/{filename}")
+
+    def platform_skills(self) -> dict:
+        """List all available platform skills."""
+        return self._get("/platform/skills")
+
+    def platform_skills_catalog(self) -> dict:
+        """Get the skills catalog."""
+        return self._get("/platform/skills/catalog")
+
+    def platform_skills_templates(self) -> dict:
+        """Get skill templates."""
+        return self._get("/platform/skills/templates")
+
+    def platform_agent_schedule_update(self, agent_id: str, sched_id: str,
+                                        schedule: dict) -> dict:
+        """Update a platform agent schedule."""
+        return self._put(f"/platform/agents/{agent_id}/schedules/{sched_id}", schedule)
+
+    def platform_agent_replace(self, agent_id: str, config: dict) -> dict:
+        """Replace a platform agent configuration (full PUT)."""
+        return self._put(f"/platform/agents/{agent_id}", config)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # BADGE — SVG and embed
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def badge_svg(self) -> str:
+        """Get the CodeAstra trust badge SVG."""
+        url = f"{self.base_url}/badge/svg"
+        r = self._get_sync().get(url)
+        r.raise_for_status()
+        return r.text
+
+    def badge_embed(self) -> str:
+        """Get the badge embed HTML snippet."""
+        url = f"{self.base_url}/badge/embed"
+        r = self._get_sync().get(url)
+        r.raise_for_status()
+        return r.text
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # METRICS — JSON
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def metrics(self) -> dict:
+        """Get system metrics as JSON."""
+        return self._get("/metrics")
+
+    def admin_tenants(self) -> dict:
+        """List all tenants (admin only)."""
+        return self._get("/admin/tenants")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # EXECUTOR v2 — wipe-enabled vault compute runs
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def executor_run_v2(self, token_id: str, dry_run: bool = False,
+                        wipe_after: bool = True, **kwargs) -> dict:
+        """Run vault executor v2 with wipe-after support."""
+        return self._post("/executor/run/v2",
+                          {"token_id": token_id, "dry_run": dry_run,
+                           "wipe_after": wipe_after, **kwargs})
+
+    def executor_run_cohort_v2(self, cohort_id: str, dry_run: bool = False,
+                                wipe_after: bool = True, **kwargs) -> dict:
+        """Run cohort executor v2 with wipe-after support."""
+        return self._post("/executor/run/cohort/v2",
+                          {"cohort_id": cohort_id, "dry_run": dry_run,
+                           "wipe_after": wipe_after, **kwargs})
+
+    def executor_plan(self, token_id: str) -> dict:
+        """Get the execution plan for a token without running it."""
+        return self._post("/executor/plan", {"token_id": token_id})
+
+    def executor_session_get(self, session_id: str) -> dict:
+        """Get executor session details."""
+        return self._get(f"/executor/session/{session_id}")
+
+    def executor_sessions(self, limit: int = 50) -> dict:
+        """List all executor sessions."""
+        return self._get("/executor/sessions", {"limit": limit})
+
+    def executor_run_v2_wipe(self, token_id: str) -> dict:
+        """Wipe after v2 executor run."""
+        return self._post("/executor/run/v2/wipe", {"token_id": token_id})
+
+    def executor_run_cohort_v2_wipe(self, cohort_id: str) -> dict:
+        """Wipe after v2 cohort executor run."""
+        return self._post("/executor/run/cohort/v2/wipe", {"cohort_id": cohort_id})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # CDT — Controlled Data Tokens
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def cdt_mint(
+        self,
+        real_value:      str,
+        data_type:       str,
+        allowed_actions: list | None = None,
+        allowed_targets: list | None = None,
+        max_uses:        int | None  = None,
+        ttl_hours:       int         = 720,
+        facts:           dict | None = None,
+    ) -> dict:
+        """Mint a Controlled Data Token with policy-enforced access."""
+        body: dict[str, Any] = {
+            "real_value": real_value, "data_type": data_type, "ttl_hours": ttl_hours,
+        }
+        if allowed_actions: body["allowed_actions"] = allowed_actions
+        if allowed_targets: body["allowed_targets"] = allowed_targets
+        if max_uses:        body["max_uses"]        = max_uses
+        if facts:           body["facts"]           = facts
+        return self._post("/cdt/mint", body)
+
+    def cdt_mint_batch(self, tokens: list) -> dict:
+        """Batch-mint CDTs."""
+        return self._post("/cdt/mint/batch", {"tokens": tokens})
+
+    def cdt_get(self, token_id: str) -> dict:
+        """Get CDT metadata."""
+        return self._get(f"/cdt/{token_id}")
+
+    def cdt_execute(self, token_id: str, action_type: str,
+                    target_url: str | None = None, **kwargs) -> dict:
+        """Execute an action using a CDT."""
+        return self._post(f"/cdt/{token_id}/execute",
+                          {"action_type": action_type, "target_url": target_url, **kwargs})
+
+    def cdt_upgrade(self, token_id: str, new_policy: dict) -> dict:
+        """Upgrade CDT policy without revoking the token."""
+        return self._post(f"/cdt/{token_id}/upgrade", new_policy)
+
+    def cdt_merge(self, token_ids: list[str], operation: str = "merge") -> dict:
+        """Merge multiple CDTs into one."""
+        return self._post("/cdt/merge", {"token_ids": token_ids, "operation": operation})
+
+    def cdt_query(self, query: str, cohort_id: str | None = None, **kwargs) -> dict:
+        """Query CDTs by facts or metadata."""
+        body: dict[str, Any] = {"query": query, **kwargs}
+        if cohort_id: body["cohort_id"] = cohort_id
+        return self._post("/cdt/query", body)
+
+    def cdt_signal(self, cohort_id: str, signal: dict | None = None) -> dict:
+        """Send a signal to a CDT cohort."""
+        return self._post("/cdt/signal", {"cohort_id": cohort_id, **(signal or {})})
+
+    def cdt_memory(self, token_id: str) -> dict:
+        """Get the memory/learning state of a CDT."""
+        return self._get(f"/cdt/{token_id}/memory")
+
+    def cdt_audit(self, token_id: str) -> dict:
+        """Get CDT access audit log."""
+        return self._get(f"/cdt/{token_id}/audit")
+
+    def cdt_revoke(self, token_id: str) -> dict:
+        """Revoke a CDT."""
+        return self._delete(f"/cdt/{token_id}")
+
+    def cdt_stats(self) -> dict:
+        """CDT system statistics."""
+        return self._get("/cdt/stats")
+
+    def cdt_recognize(self, value: str) -> dict:
+        """Recognize if a value is a CDT."""
+        return self._post("/cdt/recognize", {"value": value})
+
+    def cdt_formats(self) -> dict:
+        """List CDT token formats."""
+        return self._get("/cdt/formats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # THINKING TOKENS — hybrid and Ollama
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def think_query_hybrid(self, query: str, cohort_id: str | None = None,
+                            **kwargs) -> dict:
+        """Hybrid semantic + structured ThinkingToken query."""
+        body: dict[str, Any] = {"query": query, **kwargs}
+        if cohort_id: body["cohort_id"] = cohort_id
+        return self._post("/think/query/hybrid", body)
+
+    def think_cohort_hybrid(self, cohort_id: str, query: str, **kwargs) -> dict:
+        """Hybrid cohort ThinkingToken query."""
+        return self._post("/think/cohort/hybrid",
+                          {"cohort_id": cohort_id, "query": query, **kwargs})
+
+    def think_ollama_setup(self) -> dict:
+        """Get Ollama setup guide for ThinkingTokens."""
+        return self._get("/think/ollama/setup")
+
+    def think_ollama_test(self, prompt: str) -> dict:
+        """Test Ollama integration for ThinkingTokens."""
+        return self._post("/think/ollama/test", {"prompt": prompt})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # OMEGA TOKENS — extended lifecycle
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def omega_approve(self, token_id: str, approver: str = "",
+                      note: str = "") -> dict:
+        """Approve an Omega token for execution."""
+        return self._post(f"/omega/{token_id}/approve",
+                          {"approver": approver, "note": note})
+
+    def omega_transition(self, token_id: str, state: str) -> dict:
+        """Transition an Omega token to a new lifecycle state."""
+        return self._post(f"/omega/{token_id}/transition", {"state": state})
+
+    def omega_instructions(self, token_id: str) -> dict:
+        """Get the instructions attached to an Omega token."""
+        return self._get(f"/omega/{token_id}/instructions")
+
+    def omega_pipeline(self, token_id: str) -> dict:
+        """Get the pipeline graph for an Omega token."""
+        return self._get(f"/omega/{token_id}/pipeline")
+
+    def omega_stats(self) -> dict:
+        """Omega token system statistics."""
+        return self._get("/omega/stats")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # RAG — document retrieve
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def rag_get(self, doc_id: str) -> dict:
+        """Get a document from the blind RAG store."""
+        return self._get(f"/rag/document/{doc_id}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PROTECT — structured protect endpoint
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def protect(self, data: Any, classification: str = "pii",
+                session_id: str | None = None, **kwargs) -> dict:
+        """General-purpose protect endpoint — tokenizes structured or text data."""
+        body: dict[str, Any] = {"data": data, "classification": classification, **kwargs}
+        if session_id: body["session_id"] = session_id
+        return self._post("/protect", body)
 
     def close(self) -> None:
         if self._sync_client:  self._sync_client.close()
@@ -2382,5 +3430,4 @@ class CodeAstraClient:
     async def __aexit__(self, *_): await self.aclose()
 
     def __repr__(self) -> str:
-        return f"CodeAstraClient(v2.0.1, mode={self.mode!r}, agent_id={self.agent_id!r})"
-
+        return f"CodeAstraClient(v2.1.0, mode={self.mode!r}, agent_id={self.agent_id!r})"
