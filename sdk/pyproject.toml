@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeastra"
+version = "2.0.0"
+description = "Enterprise Privacy SDK for AI Agents — SMPC, FHE, Vault Compute, Blind Agent Middleware. Fail-closed: if CodeAstra fails, data is blocked, never reaches the LLM."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+keywords = [
+    "ai", "agents", "langchain", "crewai", "privacy", "hipaa", "pci",
+    "security", "tokenization", "fhe", "homomorphic-encryption", "smpc",
+    "secret-sharing", "zero-knowledge", "fail-closed",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+# Fully Homomorphic Encryption — required for fhe_encrypt / fhe_decrypt / he_available()
+# TenSEAL has cp311 wheels; use Python 3.11 for Railway/Docker deployments.
+fhe    = ["tenseal>=0.3.16"]
+# LangChain integration
+langchain = ["langchain>=0.2.0", "langchain-core>=0.2.0"]
+# CrewAI integration
+crewai    = ["crewai>=0.30.0"]
+# Everything
+all = [
+    "tenseal>=0.3.16",
+    "langchain>=0.2.0",
+    "langchain-core>=0.2.0",
+    "crewai>=0.30.0",
+]
+
+[project.urls]
+Homepage      = "https://codeastra.dev"
+Documentation = "https://docs.codeastra.dev"
+Repository    = "https://github.com/dinzeyi2/codeastra"
+
+[tool.setuptools.packages.find]
+where   = ["."]
+include = ["codeastra*"]
