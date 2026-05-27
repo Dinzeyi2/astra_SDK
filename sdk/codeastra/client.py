@@ -1816,6 +1816,33 @@ class CodeAstraClient:
             server_saw_plaintext=not resp.get("inputs_seen_by_llm", False),
         )
 
+    async def avault_cohort_compute(
+        self,
+        operation:   str,
+        token_list:  list[str],
+        cohort_id:   str | None  = None,
+        epsilon:     float       = 1.0,
+        sensitivity: float | None = None,
+        wipe_after:  bool        = True,
+        session_id:  str | None  = None,
+    ) -> VaultCohortResult:
+        """Async version of vault_cohort_compute."""
+        body: dict[str, Any] = {
+            "operation":  operation,
+            "token_list": token_list,
+            "epsilon":    epsilon,
+            "wipe_after": wipe_after,
+        }
+        if cohort_id:   body["cohort_id"]   = cohort_id
+        if sensitivity: body["sensitivity"] = sensitivity
+        if session_id:  body["session_id"]  = session_id
+        resp = await self._apost("/executor/compute/cohort", body)
+        return VaultCohortResult(
+            operation=resp.get("operation", operation), result=resp.get("result", ""),
+            result_raw=resp.get("result_raw"), token_count=len(token_list),
+            dp_applied=True, dp_epsilon=epsilon, error=resp.get("error"),
+        )
+
     # ══════════════════════════════════════════════════════════════════════════
     # PROTECT TEXT
     # ══════════════════════════════════════════════════════════════════════════
@@ -1897,7 +1924,7 @@ class CodeAstraClient:
         return self._post("/think/query", body)
 
     def think_query_cohort(self, query: str, cohort_id: str, **kwargs) -> dict:
-        return self.think_query(query, cohort_id=cohort_id, **kwargs)
+        return self._post("/think/cohort", {"query": query, "cohort_id": cohort_id, **kwargs})
 
     def think_signal(self, cohort_id: str) -> dict:
         return self._post("/think/signal", {"cohort_id": cohort_id})
@@ -2087,13 +2114,13 @@ class CodeAstraClient:
         self,
         receiving_agent: str,
         tokens:          list,
-        allowed_actions: list       = [],
-        pipeline_id:     str | None = None,
-        purpose:         str | None = None,
+        allowed_actions: list | None = None,
+        pipeline_id:     str | None  = None,
+        purpose:         str | None  = None,
     ) -> dict:
         return self._post("/vault/grant", {
             "granting_agent": self.agent_id, "receiving_agent": receiving_agent,
-            "tokens": tokens, "allowed_actions": allowed_actions,
+            "tokens": tokens, "allowed_actions": allowed_actions or [],
             "pipeline_id": pipeline_id, "purpose": purpose,
         })
 
@@ -2126,25 +2153,27 @@ class CodeAstraClient:
         self,
         receiving_agent: str,
         tokens:          list,
-        allowed_actions: list       = [],
-        pipeline_id:     str | None = None,
+        allowed_actions: list | None = None,
+        pipeline_id:     str | None  = None,
+        purpose:         str | None  = None,
     ) -> dict:
         return await self._apost("/vault/grant", {
             "granting_agent": self.agent_id, "receiving_agent": receiving_agent,
-            "tokens": tokens, "allowed_actions": allowed_actions, "pipeline_id": pipeline_id,
+            "tokens": tokens, "allowed_actions": allowed_actions or [],
+            "pipeline_id": pipeline_id, "purpose": purpose,
         })
 
     # ── Smart Tokens ──────────────────────────────────────────────────────────
 
     def smart_tokenize(
-        self, real_value: str, data_type: str, allowed_actions: list = [],
-        allowed_targets: list = [], allowed_fields: list = [],
+        self, real_value: str, data_type: str, allowed_actions: list | None = None,
+        allowed_targets: list | None = None, allowed_fields: list | None = None,
         max_uses: int = 1, ttl_seconds: int = 86400, semantic_label: str | None = None,
     ) -> dict:
         return self._post("/vault/smart-token", {
             "real_value": real_value, "data_type": data_type, "agent_id": self.agent_id,
-            "allowed_actions": allowed_actions, "allowed_targets": allowed_targets,
-            "allowed_fields": allowed_fields, "max_uses": max_uses,
+            "allowed_actions": allowed_actions or [], "allowed_targets": allowed_targets or [],
+            "allowed_fields": allowed_fields or [], "max_uses": max_uses,
             "ttl_seconds": ttl_seconds, "semantic_label": semantic_label,
         })
 
@@ -2165,11 +2194,8 @@ class CodeAstraClient:
             "target_url": target_url, "field_name": field_name, "agent_id": self.agent_id,
         })
 
-    def smart_token_revoke(self, token_id: str, reason: str = "manual") -> dict:
-        try:
-            return self._get(f"/vault/smart-token/{token_id}/revoke")
-        except Exception:
-            return self._post(f"/vault/smart-token/{token_id}/revoke", {"reason": reason})
+    def smart_token_revoke(self, token_id: str) -> dict:
+        return self._delete(f"/vault/smart-token/{token_id}")
 
     def smart_token_audit(self, token_id: str) -> list:
         return self._get(f"/vault/smart-token/{token_id}/audit").get("audit", [])
@@ -2178,14 +2204,15 @@ class CodeAstraClient:
         return self._get("/vault/smart-token-types").get("types", [])
 
     async def asmart_tokenize(
-        self, real_value: str, data_type: str, allowed_actions: list = [],
-        allowed_targets: list = [], allowed_fields: list = [],
+        self, real_value: str, data_type: str, allowed_actions: list | None = None,
+        allowed_targets: list | None = None, allowed_fields: list | None = None,
         max_uses: int = 1, ttl_seconds: int = 86400,
     ) -> dict:
         return await self._apost("/vault/smart-token", {
             "real_value": real_value, "data_type": data_type, "agent_id": self.agent_id,
-            "allowed_actions": allowed_actions, "allowed_targets": allowed_targets,
-            "allowed_fields": allowed_fields, "max_uses": max_uses, "ttl_seconds": ttl_seconds,
+            "allowed_actions": allowed_actions or [], "allowed_targets": allowed_targets or [],
+            "allowed_fields": allowed_fields or [], "max_uses": max_uses,
+            "ttl_seconds": ttl_seconds,
         })
 
     async def asmart_token_execute(
@@ -2245,10 +2272,10 @@ class CodeAstraClient:
     # ── Policy ────────────────────────────────────────────────────────────────
 
     def register_sensitive_type(
-        self, fields: list, prefixes: list = [], doc_types: list = [],
+        self, fields: list, prefixes: list | None = None, doc_types: list | None = None,
     ) -> dict:
         return self._post("/policy/sensitivity/fields", {
-            "fields": fields, "prefixes": prefixes, "doc_types": doc_types,
+            "fields": fields, "prefixes": prefixes or [], "doc_types": doc_types or [],
         })
 
     def set_sensitivity_policy(
@@ -2271,12 +2298,12 @@ class CodeAstraClient:
         return self._get("/policy/sensitivity")
 
     def test_sensitivity(
-        self, content: dict, field_policy: dict = {},
-        sensitive_fields: list = [], tokenize_all: bool = False,
+        self, content: dict, field_policy: dict | None = None,
+        sensitive_fields: list | None = None, tokenize_all: bool = False,
     ) -> dict:
         return self._post("/policy/sensitivity/test", {
-            "content": content, "field_policy": field_policy,
-            "sensitive_fields": sensitive_fields, "tokenize_all": tokenize_all,
+            "content": content, "field_policy": field_policy or {},
+            "sensitive_fields": sensitive_fields or [], "tokenize_all": tokenize_all,
         })
 
     def set_context(
@@ -2284,15 +2311,15 @@ class CodeAstraClient:
         industry:               str | None = None,
         data_scope:             str | None = None,
         classification_level:   str | None = None,
-        extra_sensitive_fields: list       = [],
-        safe_fields:            list       = [],
-        strict_mode:            bool       = False,
+        extra_sensitive_fields: list | None = None,
+        safe_fields:            list | None = None,
+        strict_mode:            bool        = False,
     ) -> dict:
         return self._post("/policy/context", {
             "industry": industry, "data_scope": data_scope,
             "classification_level": classification_level,
-            "extra_sensitive_fields": extra_sensitive_fields,
-            "safe_fields": safe_fields, "context_strict_mode": strict_mode,
+            "extra_sensitive_fields": extra_sensitive_fields or [],
+            "safe_fields": safe_fields or [], "context_strict_mode": strict_mode,
         })
 
     def set_anonymity(
@@ -2310,20 +2337,21 @@ class CodeAstraClient:
         if quasi_identifiers is not None: body["quasi_identifiers"] = quasi_identifiers
         return self._post("/policy/anonymity", body)
 
-    def test_context(self, content: dict, context: dict, field_policy: dict = {}) -> dict:
+    def test_context(self, content: dict, context: dict,
+                     field_policy: dict | None = None) -> dict:
         return self._post("/policy/context/test", {
-            "content": content, "context": context, "field_policy": field_policy,
+            "content": content, "context": context, "field_policy": field_policy or {},
         })
 
     def smart_ingest(
-        self, content: dict, doc_type: str, field_policy: dict = {},
-        sensitive_fields: list = [], tokenize_all: bool = False,
+        self, content: dict, doc_type: str, field_policy: dict | None = None,
+        sensitive_fields: list | None = None, tokenize_all: bool = False,
         title: str | None = None, classification: str = "pii",
     ) -> dict:
         return self._post("/rag/ingest", {
             "content": content, "doc_type": doc_type, "agent_id": self.agent_id,
             "title": title, "classification": classification,
-            "field_policy": field_policy, "sensitive_fields": sensitive_fields,
+            "field_policy": field_policy or {}, "sensitive_fields": sensitive_fields or [],
             "tokenize_all": tokenize_all,
         })
 
