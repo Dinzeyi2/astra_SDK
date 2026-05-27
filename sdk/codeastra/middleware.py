@@ -496,8 +496,8 @@ class BlindAgentMiddleware:
     def grant_to(
         self,
         next_agent_id:   str,
-        allowed_actions: list[str] = [],
-        purpose:         str | None = None,
+        allowed_actions: list[str] | None = None,
+        purpose:         str | None       = None,
     ) -> dict:
         """Grant all session tokens to the next agent in the pipeline."""
         tokens = list(self._session_tokens.values())
@@ -508,13 +508,19 @@ class BlindAgentMiddleware:
             allowed_actions=allowed_actions, pipeline_id=self._pipeline_id, purpose=purpose,
         )
 
-    async def agrant_to(self, next_agent_id: str, allowed_actions: list[str] = []) -> dict:
+    async def agrant_to(
+        self,
+        next_agent_id:   str,
+        allowed_actions: list[str] | None = None,
+        purpose:         str | None       = None,
+    ) -> dict:
+        """Async version of grant_to."""
         tokens = list(self._session_tokens.values())
         if not tokens:
             return {"granted": False, "error": "No tokens minted this session"}
         return await self._client.agrant(
             receiving_agent=next_agent_id, tokens=tokens,
-            allowed_actions=allowed_actions, pipeline_id=self._pipeline_id,
+            allowed_actions=allowed_actions, pipeline_id=self._pipeline_id, purpose=purpose,
         )
 
     def execute(self, action_type: str, params: dict) -> dict:
