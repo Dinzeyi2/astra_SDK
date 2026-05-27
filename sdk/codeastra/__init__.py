@@ -83,7 +83,7 @@ from .fail_closed import (
     SAFE_ABORT_MESSAGE,
 )
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # Apply fail-closed enforcement to BlindAgentMiddleware on import.
 # This wraps _blind_output and _ablind_output so that ANY unhandled exception
