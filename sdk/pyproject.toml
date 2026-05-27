@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codeastra"
-version = "2.0.1"
+version = "2.1.0"
 description = "Enterprise Privacy SDK for AI Agents — SMPC, FHE, Vault Compute, Blind Agent Middleware. Fail-closed: if CodeAstra fails, data is blocked, never reaches the LLM."
 readme = "README.md"
 license = "MIT"
